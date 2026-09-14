@@ -15,10 +15,16 @@ its settings when creating the service by hand.
 | Start Command | `npm start` |
 | Health Check Path | `/api/health` |
 
-> **`--include=dev` is not optional.** Render sets `NODE_ENV=production`, and npm
-> reads `NODE_ENV` to decide what to install: under `production` it sets
-> `omit=dev` and skips every devDependency. TypeScript is a devDependency, so
-> without this the build fails with `sh: tsc: not found`.
+> **Why the build works with a plain `npm install`.** Render sets
+> `NODE_ENV=production`, and npm reads `NODE_ENV` to decide what to install:
+> under `production` it sets `omit=dev` and skips every devDependency —
+> TypeScript included — so the build would fail with
+> `Cannot find module .../typescript/bin/tsc`.
+>
+> A committed `.npmrc` containing `include=dev` overrides that, so the
+> repository enforces it and there is no dashboard setting to remember.
+> `--include=dev` in the build command below is belt-and-braces; either alone
+> is sufficient.
 
 > **Do not set `PORT` yourself.** Render injects it, and the app reads
 > `process.env.PORT`. Hard-coding it makes the service unreachable.
@@ -194,7 +200,7 @@ Ways to avoid it during a demo:
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Build fails: `sh: tsc: not found` | `NODE_ENV=production` makes npm skip devDependencies | Build command must be `npm install --include=dev && npm run build` |
+| Build fails: `Cannot find module .../typescript/bin/tsc` | devDependencies were skipped — the install line shows ~159 packages instead of ~590 | The committed `.npmrc` (`include=dev`) fixes this. If an old build **cache** is being reused, use **Clear build cache & deploy** |
 | Deploy succeeds, service marked unhealthy | Health Check Path wrong, or the app bound to the wrong port | Path is `/api/health`; never set `PORT` yourself |
 | First request after a pause takes ~50s | Free-plan spin-down | See above |
 | Dashboard loads but every request fails with a CORS error | `CLIENT_URL` does not exactly match the client's origin | Set it (with `https://`, no trailing slash) and redeploy |

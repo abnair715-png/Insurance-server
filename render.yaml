@@ -12,10 +12,9 @@ services:
     plan: free
     region: oregon
 
-    # --include=dev is REQUIRED. Render sets NODE_ENV=production, and npm reads
-    # NODE_ENV to decide what to install: under `production` it sets omit=dev and
-    # skips every devDependency. TypeScript is a devDependency, so without this
-    # the build fails with "sh: tsc: not found".
+    # The committed .npmrc already forces devDependencies to install, whatever
+    # NODE_ENV says. --include=dev here is belt-and-braces: either alone is
+    # enough, and both together cost nothing.
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
 

@@ -891,9 +891,10 @@ is why one repo is recommended here.
 | Start Command | `npm start` |
 | Health Check Path | `/api/health` |
 
-`--include=dev` is required: Render sets `NODE_ENV=production`, which makes npm
-skip devDependencies — and TypeScript is one, so the build would fail with
-`sh: tsc: not found`. **Never set `PORT` yourself**; Render injects it.
+A committed `.npmrc` (`include=dev`) forces devDependencies to install whatever
+`NODE_ENV` says, so a plain `npm install && npm run build` also works — Render
+sets `NODE_ENV=production`, which would otherwise make npm skip TypeScript.
+**Never set `PORT` yourself**; Render injects it.
 
 Add the environment variables from
 [server/docs/deployment.md](docs/deployment-overview.md). Leave `CLIENT_URL` as
