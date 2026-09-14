@@ -224,7 +224,7 @@ repository documents the frontend and its Vercel deployment:
 | Frontend | React 18, TypeScript, React Router 6, Tailwind CSS, Vite | Specified; Vite for fast builds and a dev proxy that mirrors production's single origin |
 | Backend | Node 20+, Express 4, TypeScript | Specified; Express 4 for predictable middleware behaviour |
 | Database | MongoDB Atlas, Mongoose 8 | Specified; suits per-product rule documents and quotation snapshots |
-| Auth | JWT — Bearer token from the SPA, httpOnly cookie also supported | Separate origins make a `SameSite` cookie undeliverable; trade-off documented below |
+| Auth | JWT in an **httpOnly cookie**; Bearer also accepted for curl/tests | The client stores no token, so XSS cannot steal a session. `SameSite` is derived from the deployment topology |
 | Validation | zod | One schema gives both runtime validation and the TypeScript type |
 | Payments | Stripe Checkout (test mode) | The session URL is a shareable link — exactly what WhatsApp delivery needs |
 | PDF | PDFKit | Pure JS; no Chromium, so it fits a serverless function |
@@ -597,9 +597,10 @@ inputs.
 | Control | Implementation |
 | --- | --- |
 | Password storage | bcrypt, cost 10. `select: false`, stripped by the `toJSON` transform |
-| Session | JWT issued twice: an httpOnly `SameSite=Lax` cookie (used when same-origin) **and** a body token the SPA sends as `Authorization: Bearer` (used across origins) |
-| XSS token theft | **A real residual risk in the split deployment.** The Bearer token lives in `localStorage`, so an XSS bug could exfiltrate it. See [Architecture trade-offs](#architecture-trade-offs) |
-| CSRF | Bearer tokens are not sent automatically by the browser, so the cross-origin path is inherently CSRF-immune; the cookie path relies on `SameSite=Lax`, and no `GET` mutates state |
+| Session | JWT in an httpOnly cookie. `SameSite` is derived: `Lax` when the client and API share a host, `None; Secure` when they do not |
+| XSS token theft | **Not possible** — the client holds no token. Nothing in `localStorage`, nothing in memory, nothing for script to read |
+| CSRF | Under `SameSite=None` the cookie is sent cross-site, so `Lax`'s implicit defence does not apply. Mitigations: a strict CORS allow-list (a hostile origin cannot read responses) and no state-changing `GET` |
+| Third-party cookie blocking | A cross-site cookie is a third-party cookie; Safari blocks these by default. Serving both from one registrable domain makes it first-party — see [Architecture trade-offs](#architecture-trade-offs) |
 | CORS | Strict allow-list from `CLIENT_URL` + `CORS_ADDITIONAL_ORIGINS` (both comma-separated). Origins are normalised on both sides; an unknown origin is denied by withholding the CORS headers and logged with the value and the current allow-list |
 | User enumeration | Login returns one message and comparable work for unknown email and wrong password |
 | Privilege escalation | `role` is never accepted from a client; validation strips unknown keys |

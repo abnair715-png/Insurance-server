@@ -10,6 +10,7 @@ import { requestLogger } from './middleware/requestLogger';
 import { generalRateLimiter } from './middleware/rateLimiter';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { findInvalidOrigins, normaliseOrigin, parseOriginList } from './utils/origins';
+import { describeCookiePolicy } from './modules/auth/token.service';
 import { asyncHandler } from './utils/asyncHandler';
 import { sendSuccess } from './utils/apiResponse';
 import { apiRouter } from './routes';
@@ -74,6 +75,29 @@ export function createApp(): Express {
     });
   }
   logger.info('CORS allow-list', { origins: [...allowedOrigins] });
+
+  /**
+   * The session cookie policy is derived from whether the client and the API
+   * share a host. Log it, because getting it wrong produces the least
+   * debuggable symptom there is: login succeeds, then every request is 401
+   * because the browser silently declines to send the cookie back.
+   */
+  const cookiePolicy = describeCookiePolicy();
+  logger.info('session cookie policy', {
+    sameSite: cookiePolicy.sameSite,
+    secure: cookiePolicy.secure,
+    clientUrl: env.CLIENT_URL,
+    apiUrl: env.API_PUBLIC_URL,
+  });
+
+  if (cookiePolicy.sameSite === 'none' && !env.API_PUBLIC_URL.startsWith('https://')) {
+    logger.error(
+      'The client and API are on different hosts, which requires SameSite=None; Secure — ' +
+        'but API_PUBLIC_URL is not https. Browsers will reject the session cookie and every ' +
+        'authenticated request will return 401.',
+      { apiUrl: env.API_PUBLIC_URL },
+    );
+  }
 
   app.use(
     cors({

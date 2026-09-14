@@ -1,6 +1,10 @@
 /** Name of the httpOnly cookie carrying the agent session JWT. */
 export const AUTH_COOKIE_NAME = 'iap_session';
 
+/** Cookie lifetime. Kept in step with JWT_EXPIRES_IN (12h) so the cookie does
+ *  not outlive the token it carries, which would look like a silent 401. */
+export const SESSION_COOKIE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
 /** Policy term used for every product in this MVP. Real products would carry
  *  their own term; a single constant keeps the quotation maths explainable. */
 export const POLICY_TERM_MONTHS = 12;

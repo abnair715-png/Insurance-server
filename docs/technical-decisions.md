@@ -271,42 +271,45 @@ issuing or accepting it.
 
 ---
 
-## Bearer token in localStorage, not an httpOnly cookie
+## httpOnly cookie, not a token in localStorage
 
-**Decision.** The SPA keeps the JWT in `localStorage` and sends
-`Authorization: Bearer`. The server still sets and accepts the httpOnly cookie.
+**Decision.** The session is an httpOnly cookie set by the server. The client
+holds no token: nothing in `localStorage`, nothing in memory, nothing an XSS bug
+can read.
 
-**Why not the cookie.** Covered above: cross-site it is simply not delivered.
+**Why not a token the client stores.** Any token JavaScript can read, JavaScript
+can exfiltrate. A single XSS bug anywhere in the dashboard — including in a
+dependency — hands an attacker a live session for its full lifetime. An httpOnly
+cookie is unreadable from script by construction, so that entire class of attack
+does not apply.
 
-**Why not a cookie on a shared parent domain.** `api.example.com` and
-`app.example.com` can share a cookie scoped to `.example.com`, which would keep
-httpOnly. That needs a custom domain on both projects — a reasonable production
-step, but it does not work on `*.vercel.app`, where every project is a separate
-site under a public suffix.
+**What it costs across origins.** The client is on Vercel and the API on Render,
+which are different sites, so the cookie is cross-site and must be
+`SameSite=None; Secure`. That is set automatically: `resolveCookiePolicy()`
+compares the hosts of `CLIENT_URL` and `API_PUBLIC_URL` and picks `Lax` when
+they match (local development behind the Vite proxy) and `None; Secure` when
+they do not. Hard-coding either value breaks one of the two environments.
 
-**Why not in-memory only.** It would survive no page refresh, forcing a sign-in
-on every reload.
+**The remaining limitation, stated plainly.** A cross-site cookie is a
+*third-party* cookie. Safari blocks those by default under ITP, and Chrome has
+been restricting them. On `*.vercel.app` + `*.onrender.com` there is no way
+around that, because both are public suffixes — two subdomains of them are still
+different sites, so a shared parent-domain cookie is impossible.
 
-**The residual risk, stated plainly.** An XSS bug in the dashboard can read the
-token and use it until it expires. What reduces the blast radius: a 12-hour
-expiry, a strict CORS allow-list, React's default escaping, no
-`dangerouslySetInnerHTML` anywhere in the codebase, and no third-party scripts
-in the SPA. What would remove it: a shared parent domain (above), or a
-short-lived access token with a refresh token in an httpOnly cookie — which
-needs a token store and revocation, and is out of scope here.
+**The fix, when it matters.** Serve both from one registrable domain —
+`app.example.com` and `api.example.com`. The cookie then becomes first-party,
+works in every browser, and `SameSite=Lax` returns along with its free CSRF
+defence. That is a DNS and custom-domain change; no application code moves,
+because the policy is derived rather than configured.
 
-**Why Vercel rather than Render/Railway/Fly.** The brief specified it. It also
-suits the shape: a static SPA plus short request-response handlers, with zero
-infrastructure to maintain.
+**CSRF.** With `SameSite=None` the cookie *is* attached to cross-site requests,
+so `Lax`'s implicit protection is gone. What stands in its place: a strict CORS
+allow-list, so a hostile origin cannot read any response; no state-changing
+`GET`; and `credentials: 'include'` only ever pointed at our own API. A CSRF
+token is the next step if this ever serves a broader audience.
 
-**What serverless costs here.** Cold starts (mitigated by caching the Mongoose
-connection on `globalThis`), a 30-second execution ceiling, no background work
-after the response is returned — which is exactly why the confirmation email is
-`await`ed inside the webhook rather than fired and forgotten — and in-memory rate
-limiting that is per-instance rather than global.
-
-**Changing course.** `server/src/index.ts` is already a normal long-lived Express
-server. Moving to a container is a Dockerfile, not a rewrite.
+**Bearer is still accepted server-side**, so `curl`, Postman and the test suite
+work without a cookie jar. Browsers never use that path.
 
 ---
 

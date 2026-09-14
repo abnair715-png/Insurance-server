@@ -22,7 +22,7 @@ flowchart TB
         subgraph REN["Render — Root Directory: server"]
             NODE["Web Service · long-lived Node process<br/>npm start → node dist/index.js<br/>health check /api/health"]
         end
-        STATIC -->|"cross-origin fetch<br/>Authorization: Bearer &lt;jwt&gt;<br/>CORS allow-list"| NODE
+        STATIC -->|"cross-origin fetch<br/>httpOnly cookie (SameSite=None)<br/>CORS allow-list"| NODE
     end
 
     ATLAS[("MongoDB Atlas<br/>M0 free tier")]
@@ -82,14 +82,16 @@ idempotent by construction. See
 
 | | Single origin | Two origins (current) |
 | --- | --- | --- |
-| Auth transport | httpOnly `SameSite=Lax` cookie | `Authorization: Bearer` from `localStorage` |
-| XSS exposure of the session | None — JS cannot read the cookie | **Token is readable by JS** |
-| CSRF | Mitigated by `SameSite=Lax` | Not applicable — Bearer is not sent automatically |
+| Auth transport | httpOnly cookie, `SameSite=Lax` | httpOnly cookie, `SameSite=None; Secure` |
+| XSS exposure of the session | None — JS cannot read the cookie | None — still httpOnly |
+| CSRF | Mitigated by `SameSite=Lax` | Relies on the CORS allow-list and no state-changing `GET` |
+| Third-party cookie blocking | Not applicable | **Safari blocks by default**; fixed by a shared custom domain |
 | CORS | Not needed | Load-bearing; strict allow-list |
 | API URL in the client | Relative `/api` | Build-time `VITE_API_URL` |
 | Deploys | One | Two, independent |
 
-The server still issues and accepts the cookie, so putting both behind one
-domain would restore the httpOnly path with no application change.
+The cookie policy is derived from `CLIENT_URL` vs `API_PUBLIC_URL`, so putting
+both behind one registrable domain restores `SameSite=Lax` automatically — no
+application change.
 
 Full instructions: [../deployment.md](../deployment.md).
