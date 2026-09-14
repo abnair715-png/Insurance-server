@@ -3,11 +3,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { env, isProduction } from './config/env';
+import { logger } from './config/logger';
 import { connectToDatabase } from './db/connection';
 import { jsonBodyParser } from './middleware/bodyParser';
 import { requestLogger } from './middleware/requestLogger';
 import { generalRateLimiter } from './middleware/rateLimiter';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { findInvalidOrigins, normaliseOrigin, parseOriginList } from './utils/origins';
 import { asyncHandler } from './utils/asyncHandler';
 import { sendSuccess } from './utils/apiResponse';
 import { apiRouter } from './routes';
@@ -40,29 +42,61 @@ export function createApp(): Express {
   );
 
   /**
-   * The SPA is deployed separately, so every browser request is cross-origin and
-   * CORS is load-bearing rather than a formality. Only the configured client
-   * origin is allowed; `credentials: true` keeps the cookie path working for a
-   * same-origin deployment, while the Bearer token covers the split one.
+   * CORS.
    *
-   * CORS_ADDITIONAL_ORIGINS allows extra origins — a Vercel preview deployment
-   * of the SPA, say — without touching CLIENT_URL, which must stay a single URL
-   * because Stripe redirects back to it.
+   * The SPA is deployed to a different origin from this API, so every browser
+   * request is cross-origin and this allow-list is load-bearing rather than a
+   * formality. It is built from:
+   *
+   *   - every origin in CLIENT_URL (comma-separated)
+   *   - every origin in CORS_ADDITIONAL_ORIGINS (comma-separated)
+   *   - the local Vite dev server
+   *
+   * Origins are normalised on both sides, so a trailing slash or capitalised
+   * host in configuration still matches the browser's `Origin` header.
    */
-  const allowedOrigins = new Set(
-    [
-      env.CLIENT_URL,
-      ...env.CORS_ADDITIONAL_ORIGINS.split(',').map((origin) => origin.trim()),
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-    ].filter(Boolean),
-  );
+  const allowedOrigins = new Set<string>([
+    ...env.CLIENT_ORIGINS,
+    ...parseOriginList(env.CORS_ADDITIONAL_ORIGINS),
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ]);
+
+  // A typo in either variable silently narrows the allow-list, and the symptom
+  // is a CORS error in someone else's browser. Say so at boot instead.
+  const invalid = [
+    ...findInvalidOrigins(env.CORS_ADDITIONAL_ORIGINS),
+  ];
+  if (invalid.length > 0) {
+    logger.warn('ignoring unusable CORS origins — each must be a full http(s) origin', {
+      ignored: invalid,
+      example: 'https://firsturl.com,https://secondurl.com',
+    });
+  }
+  logger.info('CORS allow-list', { origins: [...allowedOrigins] });
+
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Same-origin, curl and server-to-server requests have no Origin header.
-        if (!origin || allowedOrigins.has(origin)) return callback(null, true);
-        return callback(new Error('Origin not allowed by CORS.'));
+        // No Origin header: same-origin, curl, server-to-server, or a Stripe
+        // webhook. CORS does not apply to any of those.
+        if (!origin) return callback(null, true);
+
+        const normalised = normaliseOrigin(origin);
+        if (normalised && allowedOrigins.has(normalised)) return callback(null, true);
+
+        /**
+         * Deny by omitting the CORS headers rather than throwing. Throwing would
+         * surface as a 500 and hide the cause; this way the browser reports a
+         * clean CORS error, non-browser clients are unaffected, and the log line
+         * below names the exact origin to add.
+         */
+        logger.warn('CORS: origin not allowed', {
+          origin,
+          allowed: [...allowedOrigins],
+          fix: 'add it to CLIENT_URL or CORS_ADDITIONAL_ORIGINS (comma-separated)',
+        });
+        return callback(null, false);
       },
       credentials: true,
     }),

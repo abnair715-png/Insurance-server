@@ -1,4 +1,14 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // A production build must not depend on test typings. The base config pulls
+    // in `jest` for the editor and the test run; omitting it here means the
+    // build cannot fail on a missing @types/jest, and keeps test-only globals
+    // out of the shipped declaration files.
+    "types": ["node"],
+    // Incremental build state belongs next to the build, not in the output that
+    // gets deployed.
+    "tsBuildInfoFile": "./.tsbuildinfo"
+  },
   "exclude": ["node_modules", "dist", "src/tests/**/*", "**/*.test.ts"]
 }

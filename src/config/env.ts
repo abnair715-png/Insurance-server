@@ -1,6 +1,7 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { normaliseOrigin, parseOriginList } from '../utils/origins';
 
 /**
  * Env file precedence — MOST SPECIFIC FIRST.
@@ -35,7 +36,38 @@ const secret = (name: string, testFallback: string) =>
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
-  CLIENT_URL: z.string().url().default('http://localhost:5173'),
+  /**
+   * Origin(s) of the client application. Accepts a comma-separated list so one
+   * API can serve several clients — production, staging, preview builds:
+   *
+   *   CLIENT_URL=https://firsturl.com,https://secondurl.com
+   *
+   * The FIRST entry is canonical: it is where Stripe redirects the customer
+   * after checkout, and the fallback for API_PUBLIC_URL. Every entry is added
+   * to the CORS allow-list.
+   */
+  CLIENT_URL: z
+    .string()
+    .default('http://localhost:5173')
+    .superRefine((value, ctx) => {
+      const entries = value
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      if (entries.length === 0) {
+        ctx.addIssue({ code: 'custom', message: 'must contain at least one URL' });
+        return;
+      }
+      for (const entry of entries) {
+        if (normaliseOrigin(entry) === null) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `"${entry}" is not a valid http(s) URL. Use a full origin such as https://firsturl.com`,
+          });
+        }
+      }
+    }),
 
   /**
    * This API's own public origin, used to build the public document links a
@@ -47,10 +79,11 @@ const envSchema = z.object({
   API_PUBLIC_URL: z.string().url().optional(),
 
   /**
-   * Extra browser origins allowed through CORS, comma-separated. Kept separate
-   * from CLIENT_URL because that one must stay a single valid URL — it is also
-   * what Stripe redirects back to after checkout.
-   * Example: a Vercel preview deployment of the SPA.
+   * Further browser origins allowed through CORS, comma-separated. Everything
+   * in CLIENT_URL is allowed already; this is for origins that must NOT become
+   * the canonical redirect target — Vercel preview builds, an internal tool.
+   *
+   *   CORS_ADDITIONAL_ORIGINS=https://firsturl.com,https://secondurl.com
    */
   CORS_ADDITIONAL_ORIGINS: z.string().default(''),
 
@@ -102,10 +135,20 @@ if (!parsed.success) {
   );
 }
 
+const clientOrigins = parseOriginList(parsed.data.CLIENT_URL);
+
 export const env = {
   ...parsed.data,
+  /**
+   * The canonical client origin — the first entry of CLIENT_URL. Stripe's
+   * success and cancel URLs must be a single address, so everything that
+   * redirects a customer uses this one.
+   */
+  CLIENT_URL: clientOrigins[0],
+  /** Every client origin, for the CORS allow-list. */
+  CLIENT_ORIGINS: clientOrigins,
   // Resolved once so callers never have to remember the fallback.
-  API_PUBLIC_URL: parsed.data.API_PUBLIC_URL ?? parsed.data.CLIENT_URL,
+  API_PUBLIC_URL: parsed.data.API_PUBLIC_URL ?? clientOrigins[0],
 };
 
 export const isProduction = env.NODE_ENV === 'production';

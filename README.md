@@ -600,7 +600,7 @@ inputs.
 | Session | JWT issued twice: an httpOnly `SameSite=Lax` cookie (used when same-origin) **and** a body token the SPA sends as `Authorization: Bearer` (used across origins) |
 | XSS token theft | **A real residual risk in the split deployment.** The Bearer token lives in `localStorage`, so an XSS bug could exfiltrate it. See [Architecture trade-offs](#architecture-trade-offs) |
 | CSRF | Bearer tokens are not sent automatically by the browser, so the cross-origin path is inherently CSRF-immune; the cookie path relies on `SameSite=Lax`, and no `GET` mutates state |
-| CORS | Strict allow-list of `CLIENT_URL` plus `CORS_ADDITIONAL_ORIGINS`; an unknown origin is refused |
+| CORS | Strict allow-list from `CLIENT_URL` + `CORS_ADDITIONAL_ORIGINS` (both comma-separated). Origins are normalised on both sides; an unknown origin is denied by withholding the CORS headers and logged with the value and the current allow-list |
 | User enumeration | Login returns one message and comparable work for unknown email and wrong password |
 | Privilege escalation | `role` is never accepted from a client; validation strips unknown keys |
 | Authorisation | Every query scoped by `createdByAgent`/`agentId`; cross-agent access is a 404 |
@@ -762,9 +762,9 @@ Precedence is *real environment* → `server/.env` → `../.env`.
 | --- | --- | --- |
 | `NODE_ENV` | yes | `development` \| `production` \| `test`. On Vercel this also makes npm skip devDependencies, which is why `vercel.json` pins `installCommand` to `npm install --include=dev` |
 | `PORT` | no (4000) | Local API port; ignored on Vercel |
-| `CLIENT_URL` | yes | Public origin **of the client deployment**. A single URL. Used for the CORS allow-list and Stripe's post-checkout redirects |
+| `CLIENT_URL` | yes | Client origin(s), **comma-separated** for more than one — `https://firsturl.com,https://secondurl.com`. The first is canonical (Stripe redirects); all are allowed through CORS |
 | `API_PUBLIC_URL` | when split | Public origin **of this API**. Used to build the public document links a customer opens from WhatsApp. Defaults to `CLIENT_URL`, which is correct only when both share an origin |
-| `CORS_ADDITIONAL_ORIGINS` | no | Extra browser origins allowed through CORS, comma-separated — e.g. a Vercel preview build of the client |
+| `CORS_ADDITIONAL_ORIGINS` | no | Further allowed origins, comma-separated — e.g. `https://firsturl.com,https://secondurl.com`. For origins that must not become the redirect target, such as preview builds |
 | `MONGODB_URI` | yes | Connection string |
 | `JWT_SECRET` | yes | Session signing key, 32+ chars |
 | `JWT_EXPIRES_IN` | no (`12h`) | Session lifetime |

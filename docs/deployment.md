@@ -78,7 +78,7 @@ environment variables:
 | `DOCUMENT_LINK_TTL_HOURS` | `168` |
 | `CLIENT_URL` | `http://localhost:5173` — placeholder, corrected in step 6 |
 | `API_PUBLIC_URL` | leave empty until this service has a URL |
-| `CORS_ADDITIONAL_ORIGINS` | empty unless you use Vercel preview builds |
+| `CORS_ADDITIONAL_ORIGINS` | empty, or a comma-separated list — see below |
 | `STRIPE_SECRET_KEY` | from step 2 |
 | `STRIPE_WEBHOOK_SECRET` | empty for now — step 5 |
 | `STRIPE_CURRENCY` | `inr` |
@@ -109,6 +109,36 @@ curl <API_URL>/api/health
 
 Copy the **Signing secret** (`whsec_…`) into `STRIPE_WEBHOOK_SECRET` and
 redeploy. Until it is set the endpoint returns `503` and payments never settle.
+
+### Allowing more than one client origin
+
+`CLIENT_URL` accepts a **comma-separated list**:
+
+```
+CLIENT_URL=https://firsturl.com,https://secondurl.com
+```
+
+- The **first** entry is canonical — it is where Stripe returns the customer
+  after checkout, and the fallback for `API_PUBLIC_URL`.
+- **Every** entry is added to the CORS allow-list.
+
+`CORS_ADDITIONAL_ORIGINS` takes the same format, for origins that should be
+allowed but must never become the redirect target — a Vercel preview build, an
+internal tool:
+
+```
+CORS_ADDITIONAL_ORIGINS=https://firsturl.com,https://secondurl.com
+```
+
+Each entry must be a **full origin including the scheme**. `firsturl.com` is
+ignored with a warning at boot, because a browser's `Origin` header never looks
+like that. A trailing slash or a capitalised host is fine — both sides are
+normalised, so `https://FirstURL.com/` matches `https://firsturl.com`.
+
+A rejected origin is **logged with the exact value and the current allow-list**,
+and denied by omitting the CORS headers rather than by throwing — so the browser
+reports a clean CORS error instead of a 500, and non-browser callers such as the
+Stripe webhook are unaffected.
 
 ## 6. Point the API at the client
 

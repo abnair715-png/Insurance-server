@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "seed": "tsx src/db/seed.ts",
     "seed:reset": "tsx src/db/seed.ts --reset",
@@ -14,7 +14,7 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch --runInBand",
     "test:coverage": "jest --runInBand --coverage",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""
   },
